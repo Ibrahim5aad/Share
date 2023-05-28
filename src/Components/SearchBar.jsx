@@ -9,6 +9,7 @@ import debug from '../utils/debug'
 import {navWithSearchParamRemoved} from '../utils/navigate'
 import {handleBeforeUnload} from '../utils/event'
 import OpenModelControl from './OpenModelControl'
+import AttachModelControl from './AttachModelControl'
 import {TooltipIconButton} from './Buttons'
 import ClearIcon from '../assets/icons/Clear.svg'
 
@@ -141,6 +142,7 @@ export default function SearchBar({fileOpen}) {
             icon={<ClearIcon/>}
           />
         }
+        <AttachModelControl fileAttach={() => fileOpen(true)}/>
       </Paper>
       { inputText.length > 0 &&
         error.length > 0 &&

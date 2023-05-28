@@ -5,6 +5,7 @@ import IfcViewsManager from './IfcElementsStyleManager'
 import IfcCustomViewSettings from './IfcCustomViewSettings'
 import CustomPostProcessor from './CustomPostProcessor'
 import debug from '../utils/debug'
+import {arrayRemove} from '../utils/arrays'
 
 
 const viewParameter = (new URLSearchParams(window.location.search)).get('view')?.toLowerCase() ?? 'default'
@@ -45,6 +46,60 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
   async loadIfcUrl(url, fitToFrame, onProgress, onError, customViewSettings) {
     this.viewsManager.setViewSettings(customViewSettings)
     return await this.IFC.loadIfcUrl(url, fitToFrame, onProgress, onError)
+  }
+
+  /**
+   * Attaches the given IFC in the current scene.
+   *
+   * @param {string} url IFC file as URL.
+   * @param {boolean} fitToFrame (optional) if true, brings the perspectiveCamera to the loaded IFC.
+   * @param {Function(event)} onProgress (optional) a callback function to report on downloading progress
+   * @param {Function} onError (optional) a callback function to report on loading errors
+   */
+  async attachIfcUrl(url, fitToFrame, onProgress, onError) {
+    let ifcModel = null
+    try {
+      const settings = this.IFC.loader.ifcManager.state.webIfcSettings
+      const fastBools = (settings === null || settings === void 0 ? void 0 : settings.USE_FAST_BOOLS) || true
+      await this.IFC.loader.ifcManager.applyWebIfcConfig({
+        COORDINATE_TO_ORIGIN: false,
+        USE_FAST_BOOLS: fastBools,
+      })
+      ifcModel = await this.IFC.loader.loadAsync(url, onProgress)
+      this.IFC.addIfcModel(ifcModel)
+      if (fitToFrame) {
+        this.context.fitToFrame()
+      }
+      return ifcModel
+    } catch (err) {
+      if (onError) {
+        onError(err)
+      }
+      if (ifcModel) {
+        this.unloadAttachedIfc(ifcModel.modelID, onError)
+      }
+      return null
+    }
+  }
+
+  /**
+   * Unloads an attached IFC from the current scene.
+   *
+   * @param {IfcModel} attached model
+   * @param {Function} onError (optional) a callback function to report on unloading errors
+   */
+  unloadAttachedIfc(model, onError = null) {
+    try {
+      this.context.items.ifcModels = arrayRemove(this.context.items.ifcModels, model)
+      this.context.items.pickableIfcModels = arrayRemove(this.context.items.pickableIfcModels, model)
+      const scene = this.context.getScene()
+      model.close(scene)
+      this.context.fitToFrame()
+    } catch (err) {
+      if (onError) {
+        onError(err)
+      }
+    }
   }
 
   /**

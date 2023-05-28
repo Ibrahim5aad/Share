@@ -94,6 +94,7 @@ export default function CadView({
   const [modelReady, setModelReady] = useState(false)
   const isMobile = useIsMobile()
   const location = useLocation()
+  const addAttachedModel = useStore((state) => state.addAttachedModel)
 
   // Granular visibility controls for the UI components
   const isSearchBarVisible = useStore((state) => state.isSearchBarVisible)
@@ -338,20 +339,25 @@ export default function CadView({
 
 
   /** Upload a local IFC file for display. */
-  function loadLocalFile() {
+  function loadLocalFile(isAttached = false) {
+    debug().log(isAttached)
     const viewerContainer = document.getElementById('viewer-container')
     const fileInput = document.createElement('input')
     fileInput.setAttribute('type', 'file')
     fileInput.addEventListener(
         'change',
-        (event) => {
+        async (event) => {
           debug().log('CadView#loadLocalFile#event:', event)
           let ifcUrl = URL.createObjectURL(event.target.files[0])
           debug().log('CadView#loadLocalFile#event: ifcUrl: ', ifcUrl)
           const parts = ifcUrl.split('/')
           ifcUrl = parts[parts.length - 1]
           window.removeEventListener('beforeunload', handleBeforeUnload)
-          navigate(`${appPrefix}/v/new/${ifcUrl}.ifc`)
+          if (!isAttached) {
+            navigate(`${appPrefix}/v/new/${ifcUrl}.ifc`)
+          } else {
+            await attachIfc(`${ifcUrl}.ifc`, false)
+          }
         },
         false,
     )
@@ -360,6 +366,39 @@ export default function CadView({
     viewerContainer.removeChild(fileInput)
   }
 
+  /** Upload a local IFC file for display. */
+  async function attachIfc(filepath, isGitPath) {
+    const loadingMessageBase = `Attaching ${filepath}`
+    setLoadingMessage(loadingMessageBase)
+    setIsLoading(true)
+    const ifcURL = isGitPath ?
+        await getFinalURL(filepath, accessToken) :
+        getNewModelRealPath(filepath)
+
+    const attachedModel = await viewer.attachIfcUrl(
+        ifcURL,
+        true,
+        (progressEvent) => {
+          if (Number.isFinite(progressEvent.loaded)) {
+            const loadedBytes = progressEvent.loaded
+            // eslint-disable-next-line no-magic-numbers
+            const loadedMegs = (loadedBytes / (1024 * 1024)).toFixed(2)
+            setLoadingMessage(`${loadingMessageBase}: ${loadedMegs} MB`)
+            debug().log(`CadView#AttachIfc$onProgress, ${loadedBytes} bytes`)
+          }
+        },
+        (error) => {
+          debug().log('CadView#AttachIfc$onError: ', error)
+          setIsLoading(false)
+          setAlertMessage(`Could not attach file: ${filepath}`)
+        })
+    const rootElt = await attachedModel.ifcManager.getSpatialStructure(attachedModel.modelID, false)
+    const rootProps = await viewer.getProperties(attachedModel.modelID, rootElt.expressID)
+    rootElt.Name = rootProps.Name
+    rootElt.LongName = rootProps.LongName
+    addAttachedModel({model: attachedModel, root: rootElt})
+    setIsLoading(false)
+  }
 
   /**
    * Analyze loaded IFC model to configure UI elements.
@@ -471,7 +510,6 @@ export default function CadView({
     try {
       // Update The Component state
       setSelectedElements(resultIDs.map((id) => `${id}`))
-
       // Sets the url to the last selected element path.
       if (resultIDs.length > 0 && updateNavigation) {
         const lastId = resultIDs.slice(-1)

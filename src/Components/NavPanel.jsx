@@ -14,6 +14,8 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import {styled} from '@mui/material/styles'
 import {useExistInFeature} from '../hooks/useExistInFeature'
+import {Box} from '@mui/material'
+import AttachFileIcon from '@mui/icons-material/AttachFile'
 
 /**
  * @param {object} model
@@ -54,6 +56,8 @@ export default function NavPanel({
       setNavigationMode(value)
     }
   }
+
+  const attachedModels = useStore((state) => state.attachedModels)
 
   const StyledToggleButtonGroup = styled(ToggleButtonGroup)(({theme}) => ({
     '& .MuiToggleButtonGroup-grouped': {
@@ -172,12 +176,26 @@ export default function NavPanel({
             }}
           >
             {isNavTree ?
-            <NavTree
-              model={model}
-              selectWithShiftClickEvents={selectWithShiftClickEvents}
-              element={element}
-              pathPrefix={pathPrefix}
-            /> :
+            <Box>
+              <NavTree
+                model={model}
+                selectWithShiftClickEvents={selectWithShiftClickEvents}
+                element={element}
+                pathPrefix={pathPrefix}
+              />
+              {attachedModels.length > 0 &&
+               attachedModels.map((m) => (
+                 <Box key={m.model.modelID}>
+                   <NavTree
+                     model={m.model}
+                     selectWithShiftClickEvents={selectWithShiftClickEvents}
+                     pathPrefix={pathPrefix}
+                     element={m.root}
+                   />
+                 </Box>
+               ))
+              }
+            </Box> :
             <TypesNavTree
               model={model}
               types={elementTypesMap}
