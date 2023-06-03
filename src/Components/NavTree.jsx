@@ -1,4 +1,4 @@
-import React from 'react'
+import React, {useState} from 'react'
 import clsx from 'clsx'
 import PropTypes from 'prop-types'
 import {reifyName} from '@bldrs-ai/ifclib'
@@ -7,6 +7,7 @@ import Typography from '@mui/material/Typography'
 import TreeItem, {useTreeItem} from '@mui/lab/TreeItem'
 import useStore from '../store/useStore'
 import HideToggleButton from './HideToggleButton'
+import {IfcElement} from '../Infrastructure/IfcElement'
 
 
 const NavTreePropTypes = {
@@ -81,13 +82,15 @@ export default function NavTree({
 
     const icon = iconProp || expansionIcon || displayIcon
 
+    const [elementState] = useState(new IfcElement(model.modelID, element.expressID))
+
     const handleMouseDown = (event) => preventSelection(event)
 
     const handleExpansionClick = (event) => handleExpansion(event)
 
     const handleSelectionClick = (event) => {
       handleSelection(event)
-      selectWithShiftClickEvents(event.shiftKey, element.expressID)
+      selectWithShiftClickEvents(event.shiftKey, elementState)
     }
 
     return (
@@ -117,7 +120,7 @@ export default function NavTree({
           </Typography>
           {hasHideIcon &&
             <div style={{display: 'contents'}}>
-              <HideToggleButton elementId={element.expressID}/>
+              <HideToggleButton element={elementState}/>
             </div>
           }
         </div>
@@ -132,15 +135,14 @@ export default function NavTree({
   }
 
   const viewer = useStore((state) => state.viewerStore)
-
-  const hasHideIcon = viewer.isolator.canBeHidden(element.expressID)
+  const hasHideIcon = viewer.getIsolator(model.modelID).canBeHidden(element.expressID)
 
   let i = 0
   // TODO(pablo): Had to add this React.Fragment wrapper to get rid of
   // warning about missing a unique key foreach item.  Don't really understand it.
   return (
     <CustomTreeItem
-      nodeId={element.expressID.toString()}
+      nodeId={IfcElement.getFullyQualifiedId(model.modelID, element.expressID)}
       label={reifyName({properties: model}, element)}
       ContentProps={{
         hasHideIcon: hasHideIcon,

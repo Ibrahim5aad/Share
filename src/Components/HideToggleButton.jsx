@@ -10,24 +10,27 @@ import GlassesIcon from '../assets/icons/Glasses.svg'
  * @param {number} IFC element id
  * @return {object} React component
  */
-export default function HideToggleButton({elementId}) {
-  const isHidden = useStore((state) => state.hiddenElements[elementId])
+export default function HideToggleButton({element}) {
+  const elementId = element.expressID
+  const modelId = element.modelID
+  const fullId = element.getFullyQualifiedId()
+  const isHidden = useStore((state) => state.hiddenElements[fullId])
   const updateHiddenStatus = useStore((state) => state.updateHiddenStatus)
   const isIsolated = useStore((state) => state.isolatedElements[elementId])
   const isTempIsolationModeOn = useStore((state) => state.isTempIsolationModeOn)
   const viewer = useStore((state) => state.viewerStore)
 
   const toggleHide = () => {
-    const toBeHidden = viewer.isolator.flattenChildren(elementId)
+    const toBeHidden = viewer.getIsolator(modelId).flattenChildren(elementId)
     if (!isHidden) {
-      viewer.isolator.hideElementsById(toBeHidden)
+      viewer.getIsolator(modelId).hideElementsById(toBeHidden)
       if (!Number.isInteger(elementId)) {
-        updateHiddenStatus(elementId, true)
+        updateHiddenStatus(fullId, true)
       }
     } else {
-      viewer.isolator.unHideElementsById(toBeHidden)
+      viewer.getIsolator(modelId).unHideElementsById(toBeHidden)
       if (!Number.isInteger(elementId)) {
-        updateHiddenStatus(elementId, false)
+        updateHiddenStatus(fullId, false)
       }
     }
   }

@@ -16,6 +16,7 @@ import SnackBarMessage from '../Components/SnackbarMessage'
 import {hasValidUrlParams as urlHasCameraParams} from '../Components/CameraControl'
 import {useIsMobile} from '../Components/Hooks'
 import {IfcViewerAPIExtended} from '../Infrastructure/IfcViewerAPIExtended'
+import {IfcElement} from '../Infrastructure/IfcElement'
 import * as Privacy from '../privacy/Privacy'
 import debug from '../utils/debug'
 import useStore from '../store/useStore'
@@ -134,20 +135,22 @@ export default function CadView({
         return
       }
       // Update The selection on the scene pick/unpick
-      const ids = selectedElements.map((id) => parseInt(id))
-      await viewer.setSelection(0, ids)
+      await viewer.setSelection(selectedElements)
       // If current selection is not empty
       if (selectedElements.length > 0) {
-        // Display the properties of the last one,
-        const lastId = selectedElements.slice(-1)
-        const props = await viewer.getProperties(0, Number(lastId))
+        // Display the properties of the last one
+        const lastElement = selectedElements.slice(-1)[0]
+        const lastId = lastElement.expressID
+        const lastModelId = lastElement.modelID
+        const props = await viewer.getProperties(lastModelId, Number(lastId))
         setSelectedElement(props)
         // Update the expanded elements in NavPanel
-        const pathIds = getPathIdsForElements(lastId)
+        const pathIds = getPathIdsForElements(lastModelId, lastId)
         if (pathIds) {
-          setExpandedElements(pathIds.map((n) => `${n}`))
+          setExpandedElements(pathIds.map((n) => `${lastModelId}-${n}`))
         }
-        const types = elementTypesMap.filter((t) => t.elements.filter((e) => ids.includes(e.expressID)).length > 0).map((t) => t.name)
+        const types = elementTypesMap.filter((t) => t.elements.filter((e) => selectedElements.includes(e.expressID)).length > 0)
+            .map((t) => t.name)
         if (types.length > 0) {
           setExpandedTypes([...new Set(types.concat(expandedTypes))])
         }
@@ -244,10 +247,15 @@ export default function CadView({
     setModelReady(true)
     // maintain hidden elements if any
     const previouslyHiddenELements = Object.entries(useStore.getState().hiddenElements)
-        .filter(([key, value]) => value === true).map(([key, value]) => Number(key))
+        .filter(([modelID, id, ishidden]) => ishidden === true).map(([modelID, id, ishidden]) => new {modelID: modelID, expressID: id})
     if (previouslyHiddenELements.length > 0) {
-      viewer.isolator.unHideAllElements()
-      viewer.isolator.hideElementsById(previouslyHiddenELements)
+      const groupedIds = previouslyHiddenELements.reduce((acc, element) => {
+        acc[element.modelID] = [...(acc[element.modelID] || []), element.expressID]; return acc
+      }, {})
+      for (const [modelId, expressIds] of Object.entries(groupedIds)) {
+        await viewer.getIsolator(modelId).unHideAllElements()
+        viewer.getIsolator(modelId).hideElementsById(expressIds)
+      }
     }
   }
 
@@ -311,7 +319,6 @@ export default function CadView({
           setIsLoading(false)
           setAlertMessage(`Could not load file: ${filepath}`)
         })
-    await viewer.isolator.setModel(loadedModel)
 
     Privacy.recordEvent('select_content', {
       content_type: 'ifc_model',
@@ -330,6 +337,7 @@ export default function CadView({
       loadedModel.modelID = 0
       setModel(loadedModel)
       setModelStore(loadedModel)
+      await viewer.setIsolator(loadedModel)
       return loadedModel
     }
 
@@ -396,7 +404,9 @@ export default function CadView({
     const rootProps = await viewer.getProperties(attachedModel.modelID, rootElt.expressID)
     rootElt.Name = rootProps.Name
     rootElt.LongName = rootProps.LongName
+    setupLookupAndParentLinks(attachedModel.modelID, rootElt, elementsById)
     addAttachedModel({model: attachedModel, root: rootElt})
+    await viewer.setIsolator(attachedModel)
     setIsLoading(false)
   }
 
@@ -413,7 +423,7 @@ export default function CadView({
     if (rootElt.expressID === undefined) {
       throw new Error('Model has undefined root express ID')
     }
-    setupLookupAndParentLinks(rootElt, elementsById)
+    setupLookupAndParentLinks(m.modelID, rootElt, elementsById)
     setDoubleClickListener()
     setKeydownListeners()
     initSearch(m, rootElt)
@@ -457,8 +467,9 @@ export default function CadView({
         throw new Error('IllegalState: empty search query')
       }
       const resultIDs = searchIndex.search(query)
-      selectItemsInScene(resultIDs, false)
-      setDefaultExpandedElements(resultIDs.map((id) => `${id}`))
+      const elements = resultIDs.map((id) => (new IfcElement(0, id)))
+      selectItemsInScene(elements, false)
+      setDefaultExpandedElements(elements.map((e) => e.getFullyQualifiedId()))
       const types = elementTypesMap.filter((t) => t.elements.filter((e) => resultIDs.includes(e.expressID)).length > 0).map((t) => t.name)
       if (types.length > 0) {
         setDefaultExpandedTypes(types)
@@ -500,20 +511,23 @@ export default function CadView({
   /**
    * Pick the given items in the scene.
    *
-   * @param {Array} resultIDs Array of expressIDs
+   * @param {IfcElement[]} elements The elements to select.
    */
-  function selectItemsInScene(resultIDs, updateNavigation = true) {
+  function selectItemsInScene(elements, updateNavigation = true) {
     // NOTE: we might want to compare with previous selection to avoid unnecessary updates
     if (!viewer) {
       return
     }
     try {
       // Update The Component state
-      setSelectedElements(resultIDs.map((id) => `${id}`))
-      // Sets the url to the last selected element path.
-      if (resultIDs.length > 0 && updateNavigation) {
-        const lastId = resultIDs.slice(-1)
-        const pathIds = getPathIdsForElements(lastId)
+      setSelectedElements(elements)
+      // Sets the url to the last selected element path of the main model.
+      const mainModelIds = elements.filter((element) => element.modelID === 0)
+      if (mainModelIds.length > 0 && updateNavigation) {
+        const lastElement = mainModelIds.slice(-1)[0]
+        const lastId = lastElement.expressID
+        const lastModelId = lastElement.modelID
+        const pathIds = getPathIdsForElements(lastModelId, lastId)
         const repoFilePath = modelPath.gitpath ? modelPath.getRepoPath() : modelPath.filepath
         const path = pathIds.join('/')
         navWith(navigate, `${pathPrefix}${repoFilePath}/${path}`, {search: '', hash: ''})
@@ -522,7 +536,7 @@ export default function CadView({
       // IFCjs will throw a big stack trace if there is not a visual
       // element, e.g. for IfcSite, but we still want to proceed to
       // setup its properties.
-      debug().log('TODO: no visual element for item ids: ', resultIDs)
+      debug().log('TODO: no visual element for item ids: ', elements)
     }
   }
 
@@ -531,11 +545,12 @@ export default function CadView({
    * Returns the ids of path parts from root to this elt in spatial
    * structure.
    *
+   * @param {number} modelId
    * @param {number} expressId
    * @return {Array} pathIds
    */
-  function getPathIdsForElements(expressId) {
-    const lookupElt = elementsById[parseInt(expressId)]
+  function getPathIdsForElements(modelId, expressId) {
+    const lookupElt = elementsById[modelId][parseInt(expressId)]
     if (!lookupElt) {
       debug().error(`CadView#getPathIdsForElements(${expressId}) missing in table:`, elementsById)
       return undefined
@@ -554,9 +569,10 @@ export default function CadView({
     if (parts.length > 0) {
       debug().log('CadView#selectElementBasedOnUrlPath: have path', parts)
       const targetId = parseInt(parts[parts.length - 1])
-      const selectedInViewer = viewer.getSelectedIds()
+      const selectedInViewer = viewer.getSelectedElements().filter((element) => element.modelID === 0)
+          .map((element) => element.expressID)
       if (isFinite(targetId) && !selectedInViewer.includes(targetId)) {
-        selectItemsInScene([targetId], false)
+        selectItemsInScene([new IfcElement(0, targetId)], false)
       }
     }
   }
@@ -575,32 +591,32 @@ export default function CadView({
     if (!item) {
       return
     }
-    selectWithShiftClickEvents(event.shiftKey, item.id)
+    selectWithShiftClickEvents(event.shiftKey, new IfcElement(item.modelID, item.id))
   }
 
   /**
    * Select/Deselect items in the scene using shift+click
    *
    * @param {boolean} shiftKey the click event
-   * @param {number} expressId the express id of the element
+   * @param {IfcElement} element the element to select/deselect
    */
-  function selectWithShiftClickEvents(shiftKey, expressId) {
+  function selectWithShiftClickEvents(shiftKey, element) {
     let newSelection = []
-    if (!viewer.isolator.canBePickedInScene(expressId)) {
+    if (!viewer.getIsolator(element.modelID).canBePickedInScene(element.expressID)) {
       return
     }
     if (shiftKey) {
-      const selectedInViewer = viewer.getSelectedIds()
-      const indexOfItem = selectedInViewer.indexOf(expressId)
+      const selectedInViewer = viewer.getSelectedElements()
+      const indexOfItem = selectedInViewer.indexOf(element)
       const alreadySelected = indexOfItem !== -1
       if (alreadySelected) {
         selectedInViewer.splice(indexOfItem, 1)
       } else {
-        selectedInViewer.push(expressId)
+        selectedInViewer.push(element)
       }
       newSelection = selectedInViewer
     } else {
-      newSelection = [expressId]
+      newSelection = [element]
     }
     selectItemsInScene(newSelection)
   }
@@ -618,13 +634,13 @@ export default function CadView({
         event.code === 'Escape') {
         selectItemsInScene([])
       } else if (event.code === 'KeyH') {
-        viewer.isolator.hideSelectedElements()
+        viewer.hideSelectedElements()
       } else if (event.code === 'KeyU') {
-        viewer.isolator.unHideAllElements()
+        viewer.unhideAllElements()
       } else if (event.code === 'KeyI') {
-        viewer.isolator.toggleIsolationMode()
+        viewer.toggleIsolationMode()
       } else if (event.code === 'KeyR') {
-        viewer.isolator.toggleRevealHiddenElements()
+        viewer.toggleRevealHiddenElements()
       }
     }
   }

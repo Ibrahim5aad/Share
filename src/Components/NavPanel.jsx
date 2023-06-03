@@ -15,7 +15,7 @@ import Tooltip from '@mui/material/Tooltip'
 import {styled} from '@mui/material/styles'
 import {useExistInFeature} from '../hooks/useExistInFeature'
 import {Box} from '@mui/material'
-import AttachFileIcon from '@mui/icons-material/AttachFile'
+// import AttachFileIcon from '@mui/icons-material/AttachFile'
 
 /**
  * @param {object} model
@@ -155,7 +155,7 @@ export default function NavPanel({
             defaultExpandIcon={<NodeClosedIcon className='caretToggle'/>}
             defaultExpanded={isNavTree ? defaultExpandedElements : defaultExpandedTypes}
             expanded={isNavTree ? expandedElements : expandedTypes}
-            selected={selectedElements}
+            selected={selectedElements.map((e) => `${e.modelID}-${e.expressID}`)}
             onNodeToggle={(event, nodeIds) => {
               if (isNavTree) {
                 setExpandedElements(nodeIds)

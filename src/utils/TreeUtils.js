@@ -18,16 +18,18 @@ export function visitTree(elt, observeCb) {
 /**
  * Visits an element tree and sets parent links for each element.
  *
+ * @param {number} modelID Model ID.
  * @param {object} rootElt Root IFC element.
  * @param {object} elementsById An already existing map of elements by ID.
  */
-export function setupLookupAndParentLinks(rootElt, elementsById) {
+export function setupLookupAndParentLinks(modelID, rootElt, elementsById) {
   if (elementsById === undefined || elementsById === null) {
     throw new Error('Illegal argument: elementsById undefined')
   }
+  elementsById[modelID] = {}
   visitTree(rootElt, (elt, parent) => {
-    elementsById[parent.expressID] = parent
-    elementsById[elt.expressID] = elt
+    elementsById[modelID][parent.expressID] = parent
+    elementsById[modelID][elt.expressID] = elt
     elt.parent = parent
   })
 }

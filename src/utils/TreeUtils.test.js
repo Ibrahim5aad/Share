@@ -31,7 +31,8 @@ export function makeTestTree() {
 test('Test setupLookupAndParentLinks', () => {
   const tree = makeTestTree()
   const eltsById = {}
-  setupLookupAndParentLinks(tree, eltsById)
+  const modelID = 0
+  setupLookupAndParentLinks(modelID, tree, eltsById)
   const a = tree
   const b = tree.children[0]
   const c = tree.children[0].children[0]
@@ -54,7 +55,8 @@ test('Test computeElementPathIds', () => {
   expect(computeElementPathIds(b, getIdCb)).toEqual(['b'])
   expect(computeElementPathIds(c, getIdCb)).toEqual(['c'])
   const eltsById = {}
-  setupLookupAndParentLinks(tree, eltsById)
+  const modelID = 0
+  setupLookupAndParentLinks(modelID, tree, eltsById)
   expect(computeElementPathIds(a, getIdCb)).toEqual(['a'])
   expect(computeElementPathIds(b, getIdCb)).toEqual(['a', 'b'])
   expect(computeElementPathIds(c, getIdCb)).toEqual(['a', 'b', 'c'])

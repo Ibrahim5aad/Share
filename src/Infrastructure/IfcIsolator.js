@@ -4,13 +4,15 @@ import {unsortedArraysAreEqual, arrayRemove} from '../utils/arrays'
 import {Mesh, MeshLambertMaterial, DoubleSide} from 'three'
 import useStore from '../store/useStore'
 import {BlendFunction} from 'postprocessing'
+import {IfcElement} from './IfcElement'
+
 
 /**
  *  Provides hiding, unhiding, isolation, and unisolation functionalities
  */
 export default class IfcIsolator {
-  subsetCustomId = 'Bldrs::Share::Isolator'
-  revealSubsetCustomId = 'Bldrs::Share::HiddenElements'
+  subsetCustomId = ''
+  revealSubsetCustomId = ''
   context = null
   ifcModel = null
   viewer = null
@@ -58,9 +60,21 @@ export default class IfcIsolator {
    */
   async setModel(ifcModel) {
     this.ifcModel = ifcModel
-    this.visualElementsIds = [...new Set(ifcModel.geometry.attributes.expressID.array)]
-    const rootElement = await this.ifcModel.ifcManager.getSpatialStructure(0, false)
+    const visuals = [...new Set(ifcModel.geometry.attributes.expressID.array)]
+    this.visualElementsIds = visuals.map((id) => IfcElement.getFullyQualifiedId(ifcModel.modelID, id))
+    const rootElement = await this.ifcModel.ifcManager.getSpatialStructure(ifcModel.modelID, false)
     this.collectSpatialElementsId(rootElement)
+    this.subsetCustomId = `Bldrs::Share::HiddenElements::${ifcModel.modelID}`
+    this.revealSubsetCustomId = `Bldrs::Share::RevealedElements::${ifcModel.modelID}`
+  }
+
+  /**
+   * Sets reveal hidden elements mode
+   *
+   * @param {boolean} (isReveal) true if reveal, otherwise false
+   */
+  setRevealHiddenElementsMode(isReveal) {
+    this.revealHiddenElementsMode = isReveal
   }
 
   /**
@@ -70,7 +84,9 @@ export default class IfcIsolator {
    */
   collectSpatialElementsId(element) {
     if (element.children.length > 0) {
-      this.spatialStructure[element.expressID] = element.children.map((e) => e.expressID)
+      this.spatialStructure[IfcElement.getFullyQualifiedId(this.ifcModel.modelID, element.expressID)] =
+          element.children.map((e) => IfcElement.getFullyQualifiedId(this.ifcModel.modelID, e.expressID))
+
       element.children.forEach((e) => {
         this.collectSpatialElementsId(e)
       })
@@ -85,14 +101,15 @@ export default class IfcIsolator {
    */
   flattenChildren(elementId, result = null) {
     if (Number.isInteger(elementId)) {
-      const children = this.spatialStructure[elementId]
+      const children = this.spatialStructure[IfcElement.getFullyQualifiedId(this.ifcModel.modelID, elementId)]
       if (result === null) {
         result = [elementId]
       }
       if (children !== undefined && children.length > 0) {
         children.forEach((c) => {
-          result.push(c)
-          this.flattenChildren(c, result)
+          const id = IfcElement.getExpressId(c)
+          result.push(id)
+          this.flattenChildren(id, result)
         })
       }
       return result
@@ -116,12 +133,12 @@ export default class IfcIsolator {
   initHideOperationsSubset(includedIds, removeModel = true) {
     if (removeModel) {
       this.context.getScene().remove(this.ifcModel)
-      this.context.items.pickableIfcModels.pop()
+      this.removeModelFromPickableModels(this.ifcModel)
       this.viewer.IFC.selector.selection.unpick()
       this.viewer.IFC.selector.preselection.unpick()
     }
     this.unhiddenSubset = this.ifcModel.createSubset({
-      modelID: 0,
+      modelID: this.ifcModel.modelID,
       scene: this.context.getScene(),
       ids: includedIds,
       removePrevious: true,
@@ -137,9 +154,9 @@ export default class IfcIsolator {
    */
   initTemporaryIsolationSubset(includedIds) {
     this.context.getScene().remove(this.ifcModel)
-    this.context.items.pickableIfcModels.pop()
+    this.removeModelFromPickableModels(this.ifcModel)
     this.isolationSubset = this.ifcModel.createSubset({
-      modelID: 0,
+      modelID: this.ifcModel.modelID,
       scene: this.context.getScene(),
       ids: includedIds,
       removePrevious: true,
@@ -149,33 +166,6 @@ export default class IfcIsolator {
     this.isolationOutlineEffect.setSelection([this.isolationSubset])
   }
 
-  /**
-   * Hides selected ifc elements
-   *
-   */
-  hideSelectedElements() {
-    if (this.tempIsolationModeOn) {
-      return
-    }
-    const selection = this.viewer.getSelectedIds()
-    if (selection.length === 0) {
-      return
-    }
-    const noChanges = unsortedArraysAreEqual(selection, this.hiddenIds)
-    if (noChanges) {
-      return
-    }
-
-    const toBeHidden = new Set(selection.concat(this.hiddenIds))
-    this.hiddenIds = [...toBeHidden]
-    const hiddenIdsObject = Object.fromEntries(
-        this.hiddenIds.map((id) => [id, true]))
-    useStore.setState({hiddenElements: hiddenIdsObject})
-    const toBeShown = this.visualElementsIds.filter((el) => !this.hiddenIds.includes(el))
-    this.initHideOperationsSubset(toBeShown)
-    useStore.setState({selectedElements: []})
-    this.viewer.setSelection(0, [], false)
-  }
 
   /**
    * Hides ifc elements by their ids
@@ -184,31 +174,33 @@ export default class IfcIsolator {
    */
   hideElementsById(toBeHiddenElementIds) {
     if (Array.isArray(toBeHiddenElementIds)) {
-      const noChanges = unsortedArraysAreEqual(toBeHiddenElementIds, this.hiddenIds)
+      const toBeHiddenFullIds = [...new Set(toBeHiddenElementIds.map((id) => IfcElement.getFullyQualifiedId(this.ifcModel.modelID, id)))]
+      const noChanges = unsortedArraysAreEqual(toBeHiddenFullIds, this.hiddenIds)
       if (noChanges) {
         return
       }
-      const toBeHidden = new Set(toBeHiddenElementIds.concat(this.hiddenIds))
+      const toBeHidden = toBeHiddenFullIds.concat(this.hiddenIds)
       this.hiddenIds = [...toBeHidden]
       const hiddenIdsObject = Object.fromEntries(
           this.hiddenIds.map((id) => [id, true]))
       useStore.setState({hiddenElements: hiddenIdsObject})
     } else if (Number.isFinite(toBeHiddenElementIds)) {
-      if (this.hiddenIds.includes(toBeHiddenElementIds)) {
+      const id = IfcElement.getFullyQualifiedId(this.ifcModel.modelID, toBeHiddenElementIds)
+      if (this.hiddenIds.includes(id)) {
         return
       }
-      this.hiddenIds.push(toBeHiddenElementIds)
-      useStore.getState().updateHiddenStatus(toBeHiddenElementIds, true)
+      this.hiddenIds.push(id)
+      useStore.getState().updateHiddenStatus(id, true)
     } else {
       return
     }
-    const toBeShown = this.visualElementsIds.filter((el) => !this.hiddenIds.includes(el))
+    const toBeShown = this.visualElementsIds.filter((id) => !this.hiddenIds.includes(id))
+        .map((id) => IfcElement.getExpressId(id))
     this.initHideOperationsSubset(toBeShown)
-    const selection = useStore.getState().selectedElements.filter((el) => !this.hiddenIds.includes(Number(el)))
+    const selection = useStore.getState().selectedElements.filter((el) => !this.hiddenIds.includes(el.getFullyQualifiedId()))
     useStore.setState({selectedElements: selection})
     if (this.revealHiddenElementsMode) {
-      this.revealHiddenElementsMode = false
-      this.toggleRevealHiddenElements()
+      this.toggleRevealHiddenElements(true)
     }
   }
 
@@ -219,7 +211,8 @@ export default class IfcIsolator {
    */
   unHideElementsById(toBeUnhiddenElementIds) {
     if (Array.isArray(toBeUnhiddenElementIds)) {
-      const toBeShown = toBeUnhiddenElementIds.filter((el) => this.hiddenIds.includes(el))
+      const toBeUnhidden = toBeUnhiddenElementIds.map((id) => IfcElement.getFullyQualifiedId(this.ifcModel.modelID, id))
+      const toBeShown = toBeUnhidden.filter((el) => this.hiddenIds.includes(el))
       if (toBeShown.length === 0) {
         return
       }
@@ -229,9 +222,10 @@ export default class IfcIsolator {
           this.hiddenIds.map((id) => [id, true]))
       useStore.setState({hiddenElements: hiddenIdsObject})
     } else if (Number.isFinite(toBeUnhiddenElementIds)) {
-      if (this.hiddenIds.includes(toBeUnhiddenElementIds)) {
-        this.hiddenIds = arrayRemove(this.hiddenIds, toBeUnhiddenElementIds)
-        useStore.getState().updateHiddenStatus(toBeUnhiddenElementIds, false)
+      const id = IfcElement.getFullyQualifiedId(this.ifcModel.modelID, toBeUnhiddenElementIds)
+      if (this.hiddenIds.includes(id)) {
+        this.hiddenIds = arrayRemove(this.hiddenIds, id)
+        useStore.getState().updateHiddenStatus(id, false)
       } else {
         return
       }
@@ -242,14 +236,14 @@ export default class IfcIsolator {
       this.unHideAllElements()
     } else {
       const toBeShown = this.visualElementsIds.filter((el) => !this.hiddenIds.includes(el))
+          .map((id) => IfcElement.getExpressId(id))
       this.initHideOperationsSubset(toBeShown)
     }
-    const selection = useStore.getState().selectedElements.map((e) => Number(e))
-    this.viewer.setSelection(0, selection, false)
+    const selection = useStore.getState().selectedElements
+    this.viewer.setSelection(selection, false)
     // reset reveal mode
     if (this.revealHiddenElementsMode) {
-      this.revealHiddenElementsMode = false
-      this.toggleRevealHiddenElements()
+      this.toggleRevealHiddenElements(true)
     }
   }
 
@@ -258,43 +252,47 @@ export default class IfcIsolator {
    *
    */
   unHideAllElements() {
-    if (this.tempIsolationModeOn) {
+    if (this.tempIsolationModeOn || !this.unhiddenSubset) {
       return
     }
+    this.removeModelFromPickableModels(this.unhiddenSubset)
     this.context.getScene().remove(this.unhiddenSubset)
-    this.context.items.pickableIfcModels.pop()
+    this.disposeMesh(this.unhiddenSubset)
     delete this.unhiddenSubset
     this.context.getScene().add(this.ifcModel)
     this.context.items.pickableIfcModels.push(this.ifcModel)
     this.hiddenIds = []
     useStore.setState({hiddenElements: {}})
     if (this.revealHiddenElementsMode) {
-      this.toggleRevealHiddenElements()
+      this.toggleRevealHiddenElements(false)
     }
   }
 
   /**
    * Toggles reveal hidden elements from hide and isolate operations
    *
+   * @param {boolean} (isreveal) true if reveal, otherwise false
    */
-  toggleRevealHiddenElements() {
-    if (this.revealHiddenElementsMode) {
+  toggleRevealHiddenElements(isreveal) {
+    if (!isreveal) {
       this.revealHiddenElementsMode = false
       this.context.getScene().remove(this.revealedElementsSubset)
+      this.disposeMesh(this.revealedElementsSubset)
       delete this.revealedElementsSubset
     } else {
-      let hidden = this.hiddenIds
+      let hidden = this.hiddenIds.map((id) => IfcElement.getExpressId(id))
       if (this.tempIsolationModeOn) {
-        hidden = hidden.concat(this.visualElementsIds.filter((e) => !this.isolatedIds.includes(e)))
+        hidden = hidden.concat(this.visualElementsIds.filter((e) => !this.isolatedIds.includes(e)).map((id) => IfcElement.getExpressId(id)))
       }
       if (hidden.length === 0) {
         this.context.getScene().remove(this.revealedElementsSubset)
+        this.disposeMesh(this.revealedElementsSubset)
         delete this.revealedElementsSubset
         return
       }
       this.revealHiddenElementsMode = true
       this.revealedElementsSubset = this.ifcModel.createSubset({
-        modelID: 0,
+        modelID: this.ifcModel.modelID,
         scene: this.context.getScene(),
         ids: hidden,
         removePrevious: true,
@@ -310,11 +308,12 @@ export default class IfcIsolator {
    * @param {number} (elementId) the element id
    * @return {boolean} true if hidden, otherwise false
    */
-  canBePickedInScene(elementId) {
+  canBePickedInScene(elementExpressId) {
+    const fullyQualifiedId = IfcElement.getFullyQualifiedId(this.ifcModel.modelID, elementExpressId)
     if (this.tempIsolationModeOn) {
-      return !this.hiddenIds.includes(elementId) && this.isolatedIds.includes(elementId)
+      return !this.hiddenIds.includes(fullyQualifiedId) && this.isolatedIds.includes(fullyQualifiedId)
     }
-    return !this.hiddenIds.includes(elementId)
+    return !this.hiddenIds.includes(fullyQualifiedId)
   }
 
   /**
@@ -324,7 +323,8 @@ export default class IfcIsolator {
    * @return {boolean} true if can be hidden, otherwise false
    */
   canBeHidden(elementId) {
-    return this.visualElementsIds.includes(elementId) || Object.keys(this.spatialStructure).includes(`${elementId}`)
+    return this.visualElementsIds.includes(IfcElement.getFullyQualifiedId(this.ifcModel.modelID, elementId)) ||
+    Object.keys(this.spatialStructure).includes(IfcElement.getFullyQualifiedId(this.ifcModel.modelID, elementId))
   }
 
   /**
@@ -333,7 +333,7 @@ export default class IfcIsolator {
    */
   toggleIsolationMode() {
     if (this.revealHiddenElementsMode) {
-      this.toggleRevealHiddenElements()
+      this.toggleRevealHiddenElements(true)
     }
     if (this.tempIsolationModeOn) {
       this.resetTempIsolation()
@@ -347,7 +347,11 @@ export default class IfcIsolator {
    *
    */
   isolateSelectedElements() {
-    const selection = this.viewer.getSelectedIds()
+    const selection = this.viewer.getSelectedElements().map((el) => el.getFullyQualifiedId())
+
+    if (selection.length === 0) {
+      return
+    }
     const noChanges = unsortedArraysAreEqual(selection, this.hiddenIds)
     if (noChanges) {
       return
@@ -358,7 +362,7 @@ export default class IfcIsolator {
     const isolatedIdsObject = Object.fromEntries(
         this.isolatedIds.map((id) => [id, true]))
     useStore.setState({isolatedElements: isolatedIdsObject})
-    this.initTemporaryIsolationSubset(selection)
+    this.initTemporaryIsolationSubset(this.viewer.getSelectedElements().map((el) => el.expressID))
   }
 
   /**
@@ -374,10 +378,12 @@ export default class IfcIsolator {
     this.isolatedIds = []
     useStore.setState({isolatedElements: {}})
     this.context.getScene().remove(this.isolationSubset)
-    this.context.items.pickableIfcModels.pop()
+    this.removeModelFromPickableModels(this.isolationSubset)
+    this.disposeMesh(this.isolationSubset)
     delete this.isolationSubset
     if (this.hiddenIds.length > 0) {
       const toBeShown = this.visualElementsIds.filter((el) => !this.hiddenIds.includes( el ))
+          .map((id) => IfcElement.getExpressId(id))
       this.initHideOperationsSubset(toBeShown, false)
     } else {
       this.context.getScene().add(this.ifcModel)
@@ -402,5 +408,33 @@ export default class IfcIsolator {
       side: DoubleSide,
       clippingPlanes: planes,
     })
+  }
+
+  /**
+   * Removes model from pickable models
+   *
+   */
+  removeModelFromPickableModels(model) {
+    this.context.items.pickableIfcModels = this.context.items.pickableIfcModels.filter(function(m) {
+      return m.uuid !== model.uuid
+    })
+  }
+
+  /**
+   * Disposes mesh
+   *
+   * @param {Mesh} mesh
+   */
+  disposeMesh(mesh) {
+    mesh.removeFromParent()
+    if (mesh.geometry.boundsTree) {
+      mesh.geometry.disposeBoundsTree()
+    }
+    mesh.geometry.dispose()
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach((mat) => mat.dispose())
+    } else {
+      mesh.material.dispose()
+    }
   }
 }

@@ -6,6 +6,7 @@ import IfcCustomViewSettings from './IfcCustomViewSettings'
 import CustomPostProcessor from './CustomPostProcessor'
 import debug from '../utils/debug'
 import {arrayRemove} from '../utils/arrays'
+import {IfcElement} from './IfcElement'
 
 
 const viewParameter = (new URLSearchParams(window.location.search)).get('view')?.toLowerCase() ?? 'default'
@@ -20,7 +21,9 @@ const viewRules = {
 export class IfcViewerAPIExtended extends IfcViewerAPI {
   // TODO: might be useful if we used a Set as well to handle large selections,
   // but for now array is more performant for small numbers
-  _selectedExpressIds = []
+  _selectedElements = []
+  _isolators = {}
+  _revealHiddenElementsMode = false
   /**  */
   constructor(options) {
     super(options)
@@ -29,7 +32,6 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
     const camera = this.context.getCamera()
     this.postProcessor = new CustomPostProcessor(renderer, scene, camera)
     this.highlighter = new IfcHighlighter(this.context, this.postProcessor)
-    this.isolator = new IfcIsolator(this.context, this)
     this.viewsManager = new IfcViewsManager(this.IFC.loader.ifcManager.parser, viewRules[viewParameter])
   }
 
@@ -67,6 +69,7 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
       })
       ifcModel = await this.IFC.loader.loadAsync(url, onProgress)
       this.IFC.addIfcModel(ifcModel)
+      await this.setIsolator(ifcModel)
       if (fitToFrame) {
         this.context.fitToFrame()
       }
@@ -112,34 +115,70 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
     if (!found) {
       return null
     }
-    const id = this.getPickedItemId(found)
-    return {modelID: found.object.modelID, id}
+    const [modelId, id] = this.getPickedItemId(found)
+    return {modelID: modelId, id}
   }
 
   /**
-   * gets a copy of the current selected expressIds in the scene
+   * gets a copy of the current selected elements in the scene
    *
-   * @return {number[]} the selected express ids in the scene
+   * @return {IfcElement[]} the selected elements in the scene as IfcElement objects
    */
-  getSelectedIds = () => [...this._selectedExpressIds]
+  getSelectedElements = () => [...this._selectedElements]
 
+  /**
+   * Sets the isolator for the given model
+   *
+   * @param {IfcModel} model the model associated with the isolator
+   */
+  async setIsolator(model) {
+    const isolator = new IfcIsolator(this.context, this)
+    this._isolators[model.modelID] = isolator
+    await isolator.setModel(model)
+    isolator.setRevealHiddenElementsMode(this._revealHiddenElementsMode)
+  }
+
+  /**
+   * Gets the isolator for the given model
+   *
+   * @param {number} modelID
+   * @return {IfcIsolator} the isolator for the given model
+   */
+  getIsolator(modelID) {
+    return this._isolators[modelID]
+  }
+
+  /**
+   * Gets the isolators for all the models
+   *
+   * @return {IfcIsolator[]} the isolators for all the models
+   */
+  getIsolators = () => [...Object.values(this._isolators)]
 
   /**
    * sets the current selected expressIds in the scene
    *
-   * @param {number} modelID
-   * @param {number[]} expressIds express Ids of the elements
+   * @param {IfcElement[]} elements the selected elements in the scene as IfcElement objects
+   * @param {boolean} focusSelection (optional) if true, focuses the camera on the selected element
    */
-  async setSelection(modelID, expressIds, focusSelection) {
-    this._selectedExpressIds = expressIds
-    const toBeSelected = this._selectedExpressIds.filter((id) => this.isolator.canBePickedInScene(id))
+  async setSelection(elements, focusSelection) {
+    this._selectedElements = elements
+    const toBeSelected = this._selectedElements
+        .filter((element) => this.getIsolator(element.modelID)
+            .canBePickedInScene(element.expressID))
+
     if (typeof focusSelection === 'undefined') {
       // if not specified, only focus on item if it was the first one to be selected
       focusSelection = toBeSelected.length === 1
     }
     if (toBeSelected.length !== 0) {
       try {
-        await this.IFC.selector.pickIfcItemsByID(modelID, toBeSelected, false, true)
+        const groupedIds = toBeSelected.reduce((acc, element) => {
+          acc[element.modelID] = [...(acc[element.modelID] || []), element.expressID]; return acc
+        }, {})
+        for (const [modelId, expressIds] of Object.entries(groupedIds)) {
+          await this.IFC.selector.pickIfcItemsByID(Number(modelId), expressIds, false, true)
+        }
         this.highlighter.setHighlighted(this.IFC.selector.selection.meshes)
       } catch (e) {
         debug().error('IfcViewerAPIExtended#setSelection$onError: ', e)
@@ -160,10 +199,28 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
       this.IFC.selector.preselection.toggleVisibility(false)
       return
     }
-    const id = this.getPickedItemId(found)
-    if (this.isolator.canBePickedInScene(id)) {
+    const [modelId, id] = this.getPickedItemId(found)
+    if (this.getIsolator(modelId).canBePickedInScene(id)) {
       await this.IFC.selector.preselection.pick(found)
       this.highlightPreselection()
+    }
+  }
+
+  /**
+   * Hides selected ifc elements
+   *
+   */
+  hideSelectedElements() {
+    if (this.tempIsolationModeOn) {
+      return
+    }
+
+    const groupedIds = this.getSelectedElements().reduce((acc, element) => {
+      acc[element.modelID] = [...(acc[element.modelID] || []), element.expressID]; return acc
+    }, {})
+
+    for (const [modelId, expressIds] of Object.entries(groupedIds)) {
+      this.getIsolator(modelId).hideElementsById(expressIds)
     }
   }
 
@@ -174,11 +231,54 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
    * @param {number[]} expressIds express Ids of the elements
    */
   async preselectElementsByIds(modelId, expressIds) {
-    const filteredIds = expressIds.filter((id) => this.isolator.canBePickedInScene(id)).map((a) => parseInt(a))
+    const filteredIds = expressIds.filter((id) => this.getIsolator(modelId).canBePickedInScene(id))
+        .map((a) => parseInt(a))
     if (filteredIds.length) {
       await this.IFC.selector.preselection.pickByID(modelId, filteredIds, false, true)
       this.highlightPreselection()
     }
+  }
+
+  /**
+   * toggles the visibility of the selected elements
+   *
+   */
+  toggleRevealHiddenElements() {
+    this._revealHiddenElementsMode = !this._revealHiddenElementsMode
+    Object.values(this._isolators).forEach((isolator) => {
+      isolator.toggleRevealHiddenElements(this._revealHiddenElementsMode)
+    })
+  }
+
+  /**
+   * sets the reveal hidden elements mode
+   *
+   *
+   * @param {boolean} isReveal reveal hidden elements mode is on or off
+   */
+  setRevealHiddenElementsMode(isReveal) {
+    this._revealHiddenElementsMode = isReveal
+  }
+
+  /**
+   * toggles the isolation mode
+   *
+   */
+  toggleIsolationMode() {
+    Object.values(this._isolators).forEach((isolator) => {
+      isolator.toggleIsolationMode()
+    })
+  }
+
+  /**
+   * Unhides all the hidden elements in the scene
+   *
+   */
+  unhideAllElements() {
+    for (const isolator of this.getIsolators()) {
+      isolator.unHideAllElements()
+    }
+    this._revealHiddenElementsMode = false
   }
 
   /**
@@ -192,11 +292,10 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
   }
 
   /**
-   *
    * Highlights the item pointed by the cursor.
    *
    * @param {object} picked item
-   * @return {number} element id
+   * @return {number[]} the modelID and the element express id
    */
   getPickedItemId(picked) {
     const mesh = picked.object
@@ -204,6 +303,22 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
       return null
     }
     const ifcManager = this.IFC
-    return ifcManager.loader.ifcManager.getExpressId(mesh.geometry, picked.faceIndex)
+    return [mesh.modelID, ifcManager.loader.ifcManager.getExpressId(mesh.geometry, picked.faceIndex)]
+  }
+
+  /**
+   * Disposes the given model
+   */
+  disposeModel(model) {
+    model.removeFromParent()
+    if (model.geometry.boundsTree) {
+      model.geometry.disposeBoundsTree()
+    }
+    model.geometry.dispose()
+    if (Array.isArray(model.material)) {
+      model.material.forEach((mat) => mat.dispose())
+    } else {
+      model.material.dispose()
+    }
   }
 }
