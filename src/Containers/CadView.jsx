@@ -11,6 +11,7 @@ import Logo from '../Components/Logo'
 import NavPanel from '../Components/NavPanel'
 import SearchBar from '../Components/SearchBar'
 import SideDrawer from '../Components/SideDrawer/SideDrawer'
+import AppStoreSideDrawer from '../Components/AppStore/AppStoreSideDrawerControl'
 import OperationsGroup from '../Components/OperationsGroup'
 import SnackBarMessage from '../Components/SnackbarMessage'
 import {hasValidUrlParams as urlHasCameraParams} from '../Components/CameraControl'
@@ -96,7 +97,7 @@ export default function CadView({
   const isMobile = useIsMobile()
   const location = useLocation()
   const addAttachedModel = useStore((state) => state.addAttachedModel)
-
+  const setLoadedFileInfo = useStore((state) => state.setLoadedFileInfo)
   // Granular visibility controls for the UI components
   const isSearchBarVisible = useStore((state) => state.isSearchBarVisible)
   const isNavigationPanelVisible = useStore((state) => state.isNavigationPanelVisible)
@@ -338,6 +339,7 @@ export default function CadView({
       setModel(loadedModel)
       setModelStore(loadedModel)
       await viewer.setIsolator(loadedModel)
+      updateLoadedFileInfo(uploadedFile, ifcURL)
       return loadedModel
     }
 
@@ -357,6 +359,7 @@ export default function CadView({
         async (event) => {
           debug().log('CadView#loadLocalFile#event:', event)
           let ifcUrl = URL.createObjectURL(event.target.files[0])
+          setLoadedFileInfo({source: 'local', info: event.target.files})
           debug().log('CadView#loadLocalFile#event: ifcUrl: ', ifcUrl)
           const parts = ifcUrl.split('/')
           ifcUrl = parts[parts.length - 1]
@@ -645,6 +648,26 @@ export default function CadView({
     }
   }
 
+
+  /**
+   * handles updating the stored file meta data for all cases except local files.
+   *
+   * @param {string} ifcUrl the final ifcUrl that was passed to the viewer
+   */
+  function updateLoadedFileInfo(uploadedFile, ifcUrl) {
+    if (uploadedFile) {
+      return
+    }
+    const githubRegex = /(raw.githubusercontent|github.com)/gi
+    if (ifcUrl.indexOf('/') === 0) {
+      setLoadedFileInfo({source: 'share', info: {
+        url: `${window.location.protocol}//${window.location.host}${ifcUrl}`,
+      }})
+    } else if (githubRegex.test(ifcUrl)) {
+      setLoadedFileInfo({source: 'github', info: {url: ifcUrl}})
+    }
+  }
+
   const windowDimensions = useWindowDimensions()
   const spacingBetweenSearchAndOpsGroupPx = 20
   const operationsGroupWidthPx = 60
@@ -768,6 +791,7 @@ function OperationsGroupAndDrawer({deselectItems}) {
           }}
         >
           <SideDrawer/>
+          <AppStoreSideDrawer/>
         </Box>
       </>
     ) : (
@@ -783,6 +807,7 @@ function OperationsGroupAndDrawer({deselectItems}) {
       >
         <OperationsGroup deselectItems={deselectItems}/>
         <SideDrawer/>
+        <AppStoreSideDrawer/>
       </Box>
     )
   )
