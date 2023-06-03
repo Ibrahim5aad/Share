@@ -141,6 +141,7 @@ export default class IfcIsolator {
       modelID: this.ifcModel.modelID,
       scene: this.context.getScene(),
       ids: includedIds,
+      applyBVH: true,
       removePrevious: true,
       customID: this.subsetCustomId,
     })
@@ -159,6 +160,7 @@ export default class IfcIsolator {
       modelID: this.ifcModel.modelID,
       scene: this.context.getScene(),
       ids: includedIds,
+      applyBVH: true,
       removePrevious: true,
       customID: this.subsetCustomId,
     })
@@ -295,6 +297,7 @@ export default class IfcIsolator {
         modelID: this.ifcModel.modelID,
         scene: this.context.getScene(),
         ids: hidden,
+        applyBVH: true,
         removePrevious: true,
         customID: this.revealSubsetCustomId,
         material: this.hiddenMaterial,
