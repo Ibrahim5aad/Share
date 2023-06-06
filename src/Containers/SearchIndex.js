@@ -1,6 +1,7 @@
 import * as Ifc from '@bldrs-ai/ifclib'
 import debug from '../utils/debug'
 import {deleteProperties} from '../utils/objects'
+import {IfcElement} from '../Infrastructure/IfcElement'
 
 
 /** TODO(pablo): maybe refactor into {IfcSearchIndex extends SearchIndex}. */
@@ -22,6 +23,8 @@ export default class SearchIndex {
    * @param {object} elt async callback for rendering sub-object
    */
   indexElement(model, elt) {
+    // map the element to its model
+    elt.modelID = model.properties.modelID
     const type = Ifc.getType(model, elt)
     if (type) {
       this.indexElementByString(this.eltsByType, type, elt)
@@ -137,12 +140,14 @@ export default class SearchIndex {
    */
   search(query) {
     // Need to ensure only expressID strings
-    const toExpressIds = (results) => {
+    const toFullyQualifiedIds = (results) => {
       results = results.filter((elt) => elt !== null &&
                                elt !== undefined &&
                                typeof elt.expressID === 'number' &&
-                               !isNaN(elt.expressID))
-      return results.map((elt) => elt.expressID)
+                               typeof elt.modelID === 'number' &&
+                               !isNaN(elt.expressID) &&
+                               !isNaN(elt.modelID))
+      return results.map((elt) => IfcElement.getFullyQualifiedId(elt.modelID, elt.expressID))
     }
 
     const resultSet = new Set()
@@ -175,7 +180,7 @@ export default class SearchIndex {
 
     addAll(this.eltsByText[token])
 
-    const resultIDs = toExpressIds(Array.from(resultSet))
+    const resultIDs = toFullyQualifiedIds(Array.from(resultSet))
     debug().log('result IDs: ', resultIDs)
     return resultIDs
   }
