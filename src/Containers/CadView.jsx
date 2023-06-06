@@ -409,6 +409,7 @@ export default function CadView({
     rootElt.LongName = rootProps.LongName
     setupLookupAndParentLinks(attachedModel.modelID, rootElt, elementsById)
     addAttachedModel({model: attachedModel, root: rootElt})
+      searchIndex.indexElement({properties: attachedModel}, rootElt)
     await viewer.setIsolator(attachedModel)
     setIsLoading(false)
   }
