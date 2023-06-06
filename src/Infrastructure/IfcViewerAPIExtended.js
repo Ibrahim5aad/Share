@@ -189,8 +189,22 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
       }
     } else {
       this.highlighter.setHighlighted(null)
-      this.IFC.selector.unpickIfcItems()
+      this.unpickIfcItems()
     }
+  }
+
+  /**
+   * Unpick all the selected elements in the scene
+   * Can clear multiple selections from multiple models
+   *
+   */
+  unpickIfcItems() {
+    for (const model of this.context.items.ifcModels) {
+      this.IFC.loader.ifcManager.removeSubset(model.modelID, this.IFC.selector.selection.material)
+    }
+    this.IFC.selector.selection.modelIDs.clear()
+    this.IFC.selector.selection.meshes.clear()
+    this.IFC.selector.selection.selectedFaces = {}
   }
 
   /**
