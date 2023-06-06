@@ -97,6 +97,7 @@ export default function CadView({
   const isMobile = useIsMobile()
   const location = useLocation()
   const addAttachedModel = useStore((state) => state.addAttachedModel)
+  const attachedModels = useStore((state) => state.attachedModels)
   const setLoadedFileInfo = useStore((state) => state.setLoadedFileInfo)
   // Granular visibility controls for the UI components
   const isSearchBarVisible = useStore((state) => state.isSearchBarVisible)
@@ -302,6 +303,7 @@ export default function CadView({
     setIsLoading(true)
 
     const ifcURL = (uploadedFile || filepath.indexOf('/') === 0) ? filepath : await getFinalURL(filepath, accessToken)
+    closeAttachments()
     const loadedModel = await viewer.loadIfcUrl(
         ifcURL,
         !urlHasCameraParams(), // fit to frame
@@ -350,7 +352,6 @@ export default function CadView({
 
   /** Upload a local IFC file for display. */
   function loadLocalFile(isAttached = false) {
-    debug().log(isAttached)
     const viewerContainer = document.getElementById('viewer-container')
     const fileInput = document.createElement('input')
     fileInput.setAttribute('type', 'file')
@@ -385,7 +386,6 @@ export default function CadView({
     const ifcURL = isGitPath ?
         await getFinalURL(filepath, accessToken) :
         getNewModelRealPath(filepath)
-
     const attachedModel = await viewer.attachIfcUrl(
         ifcURL,
         true,
@@ -403,15 +403,27 @@ export default function CadView({
           setIsLoading(false)
           setAlertMessage(`Could not attach file: ${filepath}`)
         })
-    const rootElt = await attachedModel.ifcManager.getSpatialStructure(attachedModel.modelID, false)
-    const rootProps = await viewer.getProperties(attachedModel.modelID, rootElt.expressID)
-    rootElt.Name = rootProps.Name
-    rootElt.LongName = rootProps.LongName
-    setupLookupAndParentLinks(attachedModel.modelID, rootElt, elementsById)
-    addAttachedModel({model: attachedModel, root: rootElt})
+    if (attachedModel) {
+      debug().log('CadView#AttachIfc: attachedModel: ', attachedModel)
+      const rootElt = await attachedModel.ifcManager.getSpatialStructure(attachedModel.modelID, true)
+      const rootProps = await viewer.getProperties(attachedModel.modelID, rootElt.expressID)
+      rootElt.Name = rootProps.Name
+      rootElt.LongName = rootProps.LongName
+      setupLookupAndParentLinks(attachedModel.modelID, rootElt, elementsById)
+      addAttachedModel({model: attachedModel, root: rootElt})
       searchIndex.indexElement({properties: attachedModel}, rootElt)
-    await viewer.setIsolator(attachedModel)
+      await viewer.setIsolator(attachedModel)
+    }
     setIsLoading(false)
+  }
+
+  /** Upload a local IFC file for display. */
+  function closeAttachments() {
+    for (const attachedModel of attachedModels) {
+      viewer.unloadAttachedIfc(attachedModel.model)
+      elementsById[attachedModel.modelID] = {}
+    }
+    useStore.setState({attachedModels: []})
   }
 
   /**
@@ -471,9 +483,9 @@ export default function CadView({
         throw new Error('IllegalState: empty search query')
       }
       const resultIDs = searchIndex.search(query)
-      const elements = resultIDs.map((id) => (new IfcElement(0, id)))
+      const elements = resultIDs.map((id) => IfcElement.getElement(id))
       selectItemsInScene(elements, false)
-      setDefaultExpandedElements(elements.map((e) => e.getFullyQualifiedId()))
+      setDefaultExpandedElements(resultIDs)
       const types = elementTypesMap.filter((t) => t.elements.filter((e) => resultIDs.includes(e.expressID)).length > 0).map((t) => t.name)
       if (types.length > 0) {
         setDefaultExpandedTypes(types)

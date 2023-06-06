@@ -19,7 +19,6 @@ export default class IfcIsolator {
   unhiddenSubset = null
   isolationSubset = null
   revealedElementsSubset = null
-  currentSelectionSubsets = []
   visualElementsIds = []
   spatialStructure = {}
   hiddenIds = []
@@ -52,7 +51,32 @@ export default class IfcIsolator {
       opacity: 1,
     })
   }
-
+  /**
+   * Disposes the isolator
+   */
+  dispose() {
+    this.visualElementsIds = null
+    this.spatialStructure = null
+    this.hiddenIds = null
+    this.isolatedIds = null
+    this.ifcModel = null
+    this.viewer = null
+    if (this.unhiddenSubset) {
+      this.disposeMesh(this.unhiddenSubset)
+      this.unhiddenSubset = null
+    }
+    if (this.isolationSubset) {
+      this.disposeMesh(this.isolationSubset)
+      this.isolationSubset = null
+    }
+    if (this.revealedElementsSubset) {
+      this.disposeMesh(this.revealedElementsSubset)
+      this.revealedElementsSubset = null
+    }
+    this.hiddenMaterial = null
+    this.isolationSubset = null
+    this.isolationOutlineEffect = null
+  }
   /**
    * Sets the loaded model to the isolator context
    *
@@ -183,16 +207,14 @@ export default class IfcIsolator {
       }
       const toBeHidden = toBeHiddenFullIds.concat(this.hiddenIds)
       this.hiddenIds = [...toBeHidden]
-      const hiddenIdsObject = Object.fromEntries(
-          this.hiddenIds.map((id) => [id, true]))
-      useStore.setState({hiddenElements: hiddenIdsObject})
+      useStore.getState().hideElements(this.hiddenIds)
     } else if (Number.isFinite(toBeHiddenElementIds)) {
       const id = IfcElement.getFullyQualifiedId(this.ifcModel.modelID, toBeHiddenElementIds)
       if (this.hiddenIds.includes(id)) {
         return
       }
       this.hiddenIds.push(id)
-      useStore.getState().updateHiddenStatus(id, true)
+      useStore.getState().hideElements([id])
     } else {
       return
     }
@@ -220,14 +242,12 @@ export default class IfcIsolator {
       }
       const toBeHidden = new Set(this.hiddenIds.filter((el) => !toBeShown.includes(el)))
       this.hiddenIds = [...toBeHidden]
-      const hiddenIdsObject = Object.fromEntries(
-          this.hiddenIds.map((id) => [id, true]))
-      useStore.setState({hiddenElements: hiddenIdsObject})
+      useStore.getState().hideElements(this.hiddenIds)
     } else if (Number.isFinite(toBeUnhiddenElementIds)) {
       const id = IfcElement.getFullyQualifiedId(this.ifcModel.modelID, toBeUnhiddenElementIds)
       if (this.hiddenIds.includes(id)) {
         this.hiddenIds = arrayRemove(this.hiddenIds, id)
-        useStore.getState().updateHiddenStatus(id, false)
+        useStore.getState().unhideElements([id])
       } else {
         return
       }
@@ -264,7 +284,7 @@ export default class IfcIsolator {
     this.context.getScene().add(this.ifcModel)
     this.context.items.pickableIfcModels.push(this.ifcModel)
     this.hiddenIds = []
-    useStore.setState({hiddenElements: {}})
+    useStore.getState().unhideElementsFromModel(this.ifcModel.modelID)
     if (this.revealHiddenElementsMode) {
       this.toggleRevealHiddenElements(false)
     }
@@ -282,6 +302,7 @@ export default class IfcIsolator {
       this.disposeMesh(this.revealedElementsSubset)
       delete this.revealedElementsSubset
     } else {
+      this.revealHiddenElementsMode = true
       let hidden = this.hiddenIds.map((id) => IfcElement.getExpressId(id))
       if (this.tempIsolationModeOn) {
         hidden = hidden.concat(this.visualElementsIds.filter((e) => !this.isolatedIds.includes(e)).map((id) => IfcElement.getExpressId(id)))
@@ -292,7 +313,6 @@ export default class IfcIsolator {
         delete this.revealedElementsSubset
         return
       }
-      this.revealHiddenElementsMode = true
       this.revealedElementsSubset = this.ifcModel.createSubset({
         modelID: this.ifcModel.modelID,
         scene: this.context.getScene(),

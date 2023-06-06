@@ -1,3 +1,5 @@
+import { IfcElement } from "../Infrastructure/IfcElement";
+
 /**
  * Data stored in Zustand for Isolator state.
  *
@@ -7,15 +9,23 @@
  */
 export default function createIsolatorSlice(set, get) {
   return {
-    hiddenElements: {},
+    hiddenElements: [],
     isolatedElements: {},
     isTempIsolationModeOn: false,
 
-    updateHiddenStatus: (elementId, isHidden) =>
+    hideElements: (hiddenElements) =>
       set((state) => ({
-        hiddenElements: {
-          ...state.hiddenElements, [elementId]: isHidden,
-        },
+        hiddenElements: [...new Set([...state.hiddenElements, ...hiddenElements])],
+      })),
+
+    unhideElements: (unhiddenElements) =>
+      set((state) => ({
+        hiddenElements: state.hiddenElements.filter((elementId) => !unhiddenElements.includes(elementId)),
+      })),
+
+    unhideElementsFromModel: (modelId) =>
+      set((state) => ({
+        hiddenElements: state.hiddenElements.filter((elementId) => IfcElement.getModelId(elementId) !== modelId),
       })),
 
     updateIsolatedStatus: (elementId, isIsolated) =>

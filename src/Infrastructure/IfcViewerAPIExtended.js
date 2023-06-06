@@ -24,6 +24,7 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
   _selectedElements = []
   _isolators = {}
   _revealHiddenElementsMode = false
+  _tempIsolationMode = false
   /**  */
   constructor(options) {
     super(options)
@@ -79,7 +80,7 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
         onError(err)
       }
       if (ifcModel) {
-        this.unloadAttachedIfc(ifcModel.modelID, onError)
+        this.unloadAttachedIfc(ifcModel, onError)
       }
       return null
     }
@@ -98,6 +99,9 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
       const scene = this.context.getScene()
       model.close(scene)
       this.context.fitToFrame()
+      this.disposeModel(model)
+      this._isolators[model.modelID].dispose()
+      this._isolators[model.modelID] = null
     } catch (err) {
       if (onError) {
         onError(err)
@@ -211,7 +215,7 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
    *
    */
   hideSelectedElements() {
-    if (this.tempIsolationModeOn) {
+    if (this._tempIsolationMode) {
       return
     }
 
@@ -265,6 +269,7 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
    *
    */
   toggleIsolationMode() {
+    this._tempIsolationMode = !this._tempIsolationMode
     Object.values(this._isolators).forEach((isolator) => {
       isolator.toggleIsolationMode()
     })

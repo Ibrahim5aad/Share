@@ -50,7 +50,7 @@ describe('NavTree', () => {
     const viewer = new IfcViewerAPIExtended()
     await act(() => {
       result.current.setViewerStore(viewer)
-      result.current.updateHiddenStatus(1, false)
+      result.current.unhideElements([1])
     })
     viewer.isolator.canBeHidden.mockReturnValue(true)
     viewer.isolator.flattenChildren.mockReturnValue([ifcElementMock.expressID])

@@ -135,7 +135,7 @@ export default function NavTree({
   }
 
   const viewer = useStore((state) => state.viewerStore)
-  const hasHideIcon = viewer.getIsolator(model.modelID).canBeHidden(element.expressID)
+  const hasHideIcon = viewer.getIsolator(model.modelID)?.canBeHidden(element.expressID)
 
   let i = 0
   // TODO(pablo): Had to add this React.Fragment wrapper to get rid of

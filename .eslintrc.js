@@ -99,7 +99,7 @@ module.exports = {
     'jsdoc/require-param': 'off',
     'jsdoc/require-param-type': 'off',
     'require-await': 'error',
-    'linebreak-style': ['error', 'unix'],
+    'linebreak-style': ['error', 'windows'],
     'no-console': 'error',
     'no-debugger': 'error',
   },
