@@ -245,15 +245,19 @@ export class IfcViewerAPIExtended extends IfcViewerAPI {
   /**
    * applies Preselection effect on an Element by Id
    *
-   * @param {number} modelID
-   * @param {number[]} expressIds express Ids of the elements
+   * @param {IfcElement[]} elements the preselcted elements in the scene
    */
-  async preselectElementsByIds(modelId, expressIds) {
-    const filteredIds = expressIds.filter((id) => this.getIsolator(modelId).canBePickedInScene(id))
-        .map((a) => parseInt(a))
-    if (filteredIds.length) {
-      await this.IFC.selector.preselection.pickByID(modelId, filteredIds, false, true)
-      this.highlightPreselection()
+  async preselectElements(elements) {
+    const groupedIds = elements.reduce((acc, element) => {
+      acc[element.modelID] = [...(acc[element.modelID] || []), element.expressID]; return acc
+    }, {})
+    for (const [modelId, expressIds] of Object.entries(groupedIds)) {
+      const filteredIds = expressIds.filter((id) => this.getIsolator(modelId).canBePickedInScene(id))
+          .map((a) => parseInt(a))
+      if (filteredIds.length > 0) {
+        await this.IFC.selector.preselection.pickByID(modelId, filteredIds, false, true)
+        this.highlightPreselection()
+      }
     }
   }
 

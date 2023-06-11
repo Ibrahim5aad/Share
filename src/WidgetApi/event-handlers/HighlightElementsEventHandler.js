@@ -48,7 +48,7 @@ class HighlightElementsEventHandler extends ApiEventHandler {
       }
     }
 
-    useStore.setState({preselectedElementIds: expressIds})
+    //useStore.setState({preselectedElements: expressIds})
 
     return this.apiConnection.successfulResponse({})
   }

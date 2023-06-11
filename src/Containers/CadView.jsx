@@ -88,7 +88,7 @@ export default function CadView({
   const setElementTypesMap = useStore((state) => state.setElementTypesMap)
   const elementTypesMap = useStore((state) => state.elementTypesMap)
   const selectedElements = useStore((state) => state.selectedElements)
-  const preselectedElementIds = useStore((state) => state.preselectedElementIds)
+  const preselectedElements = useStore((state) => state.preselectedElements)
   const setViewerStore = useStore((state) => state.setViewerStore)
   const snackMessage = useStore((state) => state.snackMessage)
   const accessToken = useStore((state) => state.accessToken)
@@ -165,11 +165,11 @@ export default function CadView({
 
   useEffect(() => {
     (async () => {
-      if (Array.isArray(preselectedElementIds) && preselectedElementIds.length && viewer) {
-        await viewer.preselectElementsByIds(0, preselectedElementIds)
+      if (Array.isArray(preselectedElements) && preselectedElements.length && viewer) {
+        await viewer.preselectElements(preselectedElements)
       }
     })()
-  }, [preselectedElementIds])
+  }, [preselectedElements])
 
 
   // Watch for path changes within the model.
