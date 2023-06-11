@@ -221,7 +221,7 @@ export default class IfcIsolator {
     const toBeShown = this.visualElementsIds.filter((id) => !this.hiddenIds.includes(id))
         .map((id) => IfcElement.getExpressId(id))
     this.initHideOperationsSubset(toBeShown)
-    const selection = useStore.getState().selectedElements.filter((el) => !this.hiddenIds.includes(el.getFullyQualifiedId()))
+    const selection = useStore.getState().selectedElements.filter((el) => !this.hiddenIds.includes(el.fullyQualifiedId))
     useStore.setState({selectedElements: selection})
     if (this.revealHiddenElementsMode) {
       this.toggleRevealHiddenElements(true)
@@ -370,7 +370,7 @@ export default class IfcIsolator {
    *
    */
   isolateSelectedElements() {
-    const selection = this.viewer.getSelectedElements().map((el) => el.getFullyQualifiedId())
+    const selection = this.viewer.getSelectedElements().map((el) => el.fullyQualifiedId)
 
     if (selection.length === 0) {
       return

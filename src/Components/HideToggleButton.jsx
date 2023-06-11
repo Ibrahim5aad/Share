@@ -13,7 +13,7 @@ import GlassesIcon from '../assets/icons/Glasses.svg'
 export default function HideToggleButton({element}) {
   const elementId = element.expressID
   const modelId = element.modelID
-  const fullId = element.getFullyQualifiedId()
+  const fullId = element.fullyQualifiedId
   const hiddenElements = useStore((state) => state.hiddenElements)
   const isHidden = hiddenElements.includes(fullId)
   const hideElements = useStore((state) => state.hideElements)

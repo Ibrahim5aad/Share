@@ -16,17 +16,6 @@ export class IfcElement {
   }
 
   /**
-   * Gets the fully qualified id of the element.
-   *
-   * @return {string} the fully qualified id of the element
-   * @example "1-2" where 1 is the model id and 2 is the express id
-   */
-  getFullyQualifiedId() {
-    return this.fullyQualifiedId
-  }
-
-
-  /**
    * Gets the fully qualified id out of a model id and express id.
    *
    * @param {number} modelID the model id of the element
