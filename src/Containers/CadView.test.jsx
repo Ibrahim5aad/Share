@@ -64,8 +64,7 @@ describe('CadView', () => {
 
 
   it('renders and selects the element ID from URL', async () => {
-    const testTree = makeTestTree()
-    const targetEltId = testTree.children[0].expressID
+    const targetEltId = {modelID: 0, expressID: 1, fullyQualifiedId: '0-1'}
     const mockCurrLocation = {...defaultLocationValue, pathname: '/index.ifc/1'}
     reactRouting.useLocation.mockReturnValue(mockCurrLocation)
     const modelPath = {
@@ -89,7 +88,7 @@ describe('CadView', () => {
     expect(mockedUseNavigate).not.toHaveBeenCalled() // Make sure no redirection happened
     expect(getPropsCalls.length).toBe(numCallsExpected)
     expect(getPropsCalls[0][0]).toBe(0) // call 1, arg 1
-    expect(getPropsCalls[0][1]).toBe(targetEltId) // call 1, arg 2
+    expect(getPropsCalls[0][1]).toBe(targetEltId.expressID) // call 1, arg 2
     expect(getPropsCalls[1][0]).toBe(0) // call 2, arg 1
     expect(getPropsCalls[1][1]).toBe(0) // call 2, arg 2
     await actAsyncFlush()
@@ -121,21 +120,19 @@ describe('CadView', () => {
     expect(setCameraTargetMock).toHaveBeenLastCalledWith(4, 5, 6, true)
     const createPlanMock = viewer.clipper.createFromNormalAndCoplanarPoint
     expect(createPlanMock).toHaveBeenCalled()
-    await actAsyncFlush()
   })
 
 
   it('clear elements and planes on unselect', async () => {
-    const testTree = makeTestTree()
-    const targetEltId = testTree.children[0].expressID
+    const targetElt = {modelID: 0, expressID: 1, fullyQualifiedId: '0-1'}
     const modelPath = {
       filepath: `index.ifc`,
       gitpath: undefined,
     }
     const {result} = renderHook(() => useStore((state) => state))
     await act(() => {
-      result.current.setSelectedElement(targetEltId)
-      result.current.setSelectedElements([targetEltId])
+      result.current.setSelectedElement(targetElt)
+      result.current.setSelectedElements([targetElt])
       result.current.setCutPlaneDirections(['y'])
     })
     const {getByTitle} = render(
@@ -147,17 +144,17 @@ describe('CadView', () => {
             modelPath={modelPath}
           />
         </ShareMock>)
+    await actAsyncFlush()
     expect(getByTitle('Section')).toBeInTheDocument()
     const clearSelection = getByTitle('Clear')
-    await act(async () => {
-      await fireEvent.click(clearSelection)
+    await act(() => {
+      fireEvent.click(clearSelection)
     })
     const callDeletePlanes = viewer.clipper.deleteAllPlanes.mock.calls
     expect(callDeletePlanes.length).toBe(1)
     expect(result.current.selectedElements).toHaveLength(0)
     expect(result.current.selectedElement).toBe(null)
     expect(result.current.cutPlanes.length).toBe(0)
-    await actAsyncFlush()
   })
 
 
@@ -181,7 +178,6 @@ describe('CadView', () => {
     )
     await actAsyncFlush()
     await waitFor(() => screen.getByTitle(/Bldrs: 1.0.0/i))
-    await actAsyncFlush()
     render(
         <ShareMock>
           <CadView
@@ -192,22 +188,20 @@ describe('CadView', () => {
           />
         </ShareMock>,
     )
-    await actAsyncFlush()
     expect(window.addEventListener).toHaveBeenCalledWith('beforeunload', expect.anything())
+    await actAsyncFlush()
   })
 
 
   it('select multiple elements and then clears selection, then reselect', async () => {
-    const selectedIds = [0, 1]
-    const selectedIdsAsString = ['0', '1']
+    const selectedElements = [{modelID: 0, expressID: 0, fullyQualifiedId: '0-0'},
+      {modelID: 0, expressID: 1, fullyQualifiedId: '0-1'}]
+
     const modelPath = {
       filepath: `index.ifc`,
       gitpath: undefined,
     }
     const {result} = renderHook(() => useStore((state) => state))
-    await act(() => {
-      result.current.setSelectedElements(selectedIdsAsString)
-    })
     const {getByTitle} = render(
         <ShareMock>
           <CadView
@@ -217,13 +211,11 @@ describe('CadView', () => {
             modelPath={modelPath}
           />
         </ShareMock>)
+    await actAsyncFlush()
     expect(getByTitle('Section')).toBeInTheDocument()
     const clearSelection = getByTitle('Clear')
-    await act(async () => {
-      await fireEvent.click(clearSelection)
-    })
     await act(() => {
-      result.current.setSelectedElements(selectedIdsAsString)
+      result.current.setSelectedElements(selectedElements)
     })
     await act(async () => {
       await fireEvent.click(clearSelection)
@@ -231,25 +223,24 @@ describe('CadView', () => {
     expect(result.current.selectedElement).toBe(null)
     expect(result.current.selectedElements).toHaveLength(0)
     await act(() => {
-      result.current.setSelectedElements(selectedIdsAsString)
+      result.current.setSelectedElements(selectedElements)
     })
     await act(async () => {
       await fireEvent.click(clearSelection)
     })
     expect(result.current.selectedElement).toBe(null)
     expect(result.current.selectedElements).toHaveLength(0)
-    const modelId = 0
-    const clearCallParam = [modelId, []] // Clear Selection Call Parameters
-    const selectCallParam = [modelId, selectedIds] // Create Selection Call Parameters
-    /** Expected basic 2 on load (init search, Select from Url), select, clear, select, clear */
-    const expectedCall = [selectCallParam, clearCallParam, clearCallParam, selectCallParam, clearCallParam, selectCallParam, clearCallParam]
+    const clearCallParam = [[]] // Clear Selection Call Parameters
+    const selectCallParam = [selectedElements] // Create Selection Call Parameters
+    const expectedCall = [clearCallParam, selectCallParam, clearCallParam, selectCallParam, clearCallParam]
     const setSelectionCalls = viewer.setSelection.mock.calls
     expect(setSelectionCalls).toEqual(expectedCall)
   })
 
 
   it('can clear selection using Escape key', async () => {
-    const selectedIdsAsString = ['0', '1']
+    const selectedElements = [{modelID: 0, expressID: 0, fullyQualifiedId: '0-0'},
+      {modelID: 0, expressID: 1, fullyQualifiedId: '0-1'}]
     const elementCount = 2
     const modelPath = {
       filepath: `index.ifc`,
@@ -268,7 +259,7 @@ describe('CadView', () => {
     await actAsyncFlush()
     expect(getByTitle('Section')).toBeInTheDocument()
     await act(() => {
-      result.current.setSelectedElements(selectedIdsAsString)
+      result.current.setSelectedElements(selectedElements)
     })
     expect(result.current.selectedElements).toHaveLength(elementCount)
     fireEvent.keyDown(getByTitle('Section'), {key: 'Escape', code: 'Escape', charCode: 27})
@@ -278,8 +269,8 @@ describe('CadView', () => {
 
 
   it('can highlight some elements based on state change', async () => {
-    const highlightedIdsAsString = ['0', '1']
-    const modelId = 0
+    const preselectedElements = [{modelID: 0, expressID: 0, fullyQualifiedId: '0-0'},
+      {modelID: 0, expressID: 1, fullyQualifiedId: '0-1'}]
     const elementCount = 2
     const modelPath = {
       filepath: `index.ifc`,
@@ -298,11 +289,10 @@ describe('CadView', () => {
     await actAsyncFlush()
     expect(getByTitle('Section')).toBeInTheDocument()
     await act(() => {
-      result.current.setPreselectedElementIds(highlightedIdsAsString)
+      result.current.setPreselectedElements(preselectedElements)
     })
-    expect(result.current.preselectedElementIds).toHaveLength(elementCount)
-    expect(viewer.preselectElementsByIds).toHaveBeenLastCalledWith(modelId, highlightedIdsAsString)
-
+    expect(result.current.preselectedElements).toHaveLength(elementCount)
+    expect(viewer.preselectElements).toHaveBeenLastCalledWith(preselectedElements)
     await actAsyncFlush()
   })
 

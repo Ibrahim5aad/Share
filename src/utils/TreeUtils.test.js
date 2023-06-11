@@ -39,9 +39,9 @@ test('Test setupLookupAndParentLinks', () => {
   expect(b).toEqual(c.parent)
   expect(a).toEqual(b.parent)
   expect(undefined).toEqual(a.parent)
-  expect(a).toEqual(eltsById[0])
-  expect(b).toEqual(eltsById[1])
-  expect(c).toEqual(eltsById[2])
+  expect(a).toEqual(eltsById[modelID][0])
+  expect(b).toEqual(eltsById[modelID][1])
+  expect(c).toEqual(eltsById[modelID][2])
 })
 
 

@@ -8,6 +8,7 @@ const ifcjsMock = jest.createMockFromModule('web-ifc-viewer')
 // Not sure why this is required, but otherwise these internal fields
 // are not present in the instantiated IfcViewerAPIExtended.
 const loadedModel = {
+  modelID: 0,
   ifcManager: {
     getSpatialStructure: jest.fn(),
     getProperties: jest.fn((eltId) => ({})),
@@ -101,7 +102,9 @@ const impl = {
   }),
   setSelection: jest.fn(),
   pickIfcItemsByID: jest.fn(),
-  preselectElementsByIds: jest.fn(),
+  preselectElements: jest.fn(),
+  getIsolator: jest.fn(),
+  setIsolator: jest.fn(),
 }
 const constructorMock = ifcjsMock.IfcViewerAPI
 constructorMock.mockImplementation(() => impl)
